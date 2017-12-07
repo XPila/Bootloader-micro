@@ -68,7 +68,7 @@ void sendchar(char c)
 
 #define	MAX_TIME_COUNT	(F_CPU >> 1)
 //*****************************************************************************
-unsigned char recchar_timeout(void)
+uint8_t recchar_timeout(void)
 {
 	uint32_t count = 0;
 	while (!(UCSR0A & (1 << RXC0)))
@@ -77,7 +77,7 @@ unsigned char recchar_timeout(void)
 		count++;
 		if (count > MAX_TIME_COUNT)
 		{
-		unsigned int	data;
+		uint16_t	data;
 		#if (FLASHEND > 0x10000)
 			data	=	pgm_read_word_far(0);	//*	get the first word of the user program
 		#else
@@ -113,6 +113,8 @@ const PROGMEM uint8_t signature[3] =
 	SIGNATURE_BYTES & 0xff,
 };
 
+const PROGMEM char sign_on[9] = "AVRISP_2";
+
 uint8_t param(uint8_t param)
 {
 	switch (param)
@@ -131,17 +133,17 @@ int main(void)
 {
 	address_t address = 0;
 	address_t eraseAddress = 0;
-	unsigned char msgParseState;
-	unsigned int ii = 0;
-	unsigned char checksum = 0;
-	unsigned char seqNum = 0;
-	unsigned int msgLength = 0;
-	unsigned char msgBuffer[285];
-	unsigned char c, *p;
-	unsigned char isLeave = 0;
+	uint8_t msgParseState;
+	uint16_t ii = 0;
+	uint8_t checksum = 0;
+	uint8_t seqNum = 0;
+	uint16_t msgLength = 0;
+	uint8_t msgBuffer[285];
+	register uint8_t c;
+	uint8_t *p;
+	uint8_t isLeave = 0;
 
-	unsigned long boot_timer;
-	unsigned int boot_state;
+	uint16_t timer;
 
 	asm("cli");
 	asm("wdr");
@@ -153,8 +155,6 @@ int main(void)
 	if (MCUSR & _BV(WDRF))
 		goto exit;
 
-	boot_timer = 35000; // 2s
-	boot_state = 0;
 
 	UCSR0A |= (1 <<U2X0);
 	UBRR0L = UART_BAUD_SELECT(BAUDRATE,F_CPU);
@@ -162,19 +162,19 @@ int main(void)
 
 	asm("nop"); // wait until port has changed
 
-	while (!(UCSR0A & (1 << RXC0)) && (boot_timer--)) // wait for data
-		_delay();
-	if (boot_timer == 0) goto exit;
-	boot_state = 1;
+	timer = 18000; // 1s
+	while (!(UCSR0A & (1 << RXC0)) && (--timer)) _delay(); // wait for data
+	if (timer == 0) goto exit;
+
 	while (!isLeave)
 	{
 		msgParseState = ST_START;
 		ii = 0;
 		while (msgParseState != ST_PROCESS)
 		{
-			boot_timer = 100000;
-			while (!(UCSR0A & (1 << RXC0)) && (boot_timer--)) // wait for data
-			if (boot_timer == 0) goto exit;
+			timer = 18000; // 1s
+			while (!(UCSR0A & (1 << RXC0)) && (--timer)) _delay(); // wait for data
+			if (timer == 0) goto exit;
 			c = UDR0;
 			checksum ^= c;
 			switch (msgParseState)
@@ -210,10 +210,10 @@ int main(void)
 					msgParseState = ST_GET_CHECK;
 				break;
 			case ST_GET_CHECK:
-//				if (c == checksum)
+				if (checksum == 0)
 					msgParseState = ST_PROCESS;
-//				else
-//					msgParseState = ST_START;
+				else
+					msgParseState = ST_START;
 				break;
 			}
 		}
@@ -260,10 +260,10 @@ int main(void)
 			break;
 		case CMD_PROGRAM_FLASH_ISP:
 			{
-				unsigned int size = ((msgBuffer[1])<<8) | msgBuffer[2];
-				unsigned char *p = msgBuffer+10;
-				unsigned int data;
-				unsigned char highByte, lowByte;
+				uint16_t size = ((msgBuffer[1])<<8) | msgBuffer[2];
+				uint8_t *p = msgBuffer+10;
+				uint16_t data;
+				uint8_t highByte, lowByte;
 				address_t tempaddress = address;
 				// erase only main section (bootloader protection)
 				if (eraseAddress < APP_END ) //erase and write only blocks with address less 0x3e000
