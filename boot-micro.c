@@ -66,39 +66,6 @@ void sendchar(char c)
 	UCSR0A |= (1 << TXC0);            // delete TXCflag
 }
 
-#define	MAX_TIME_COUNT	(F_CPU >> 1)
-//*****************************************************************************
-uint8_t recchar_timeout(void)
-{
-	uint32_t count = 0;
-	while (!(UCSR0A & (1 << RXC0)))
-	{
-		// wait for data
-		count++;
-		if (count > MAX_TIME_COUNT)
-		{
-		uint16_t	data;
-		#if (FLASHEND > 0x10000)
-			data	=	pgm_read_word_far(0);	//*	get the first word of the user program
-		#else
-			data	=	pgm_read_word_near(0);	//*	get the first word of the user program
-		#endif
-			if (data != 0xffff)					//*	make sure its valid before jumping to it.
-			{
-				asm volatile(
-						"clr	r30		\n\t"
-						"clr	r31		\n\t"
-						"ijmp	\n\t"
-						);
-			}
-			count	=	0;
-		}
-	}
-	return UDR0;
-}
-
-
-
 
 void _delay(void)
 {
@@ -113,7 +80,6 @@ const PROGMEM uint8_t signature[3] =
 	SIGNATURE_BYTES & 0xff,
 };
 
-const PROGMEM char sign_on[9] = "AVRISP_2";
 
 uint8_t param(uint8_t param)
 {
@@ -221,17 +187,17 @@ int main(void)
 		switch (msgBuffer[0])
 		{
 		case CMD_SIGN_ON:
-			msgLength		=	11;
-			msgBuffer[1] 	=	STATUS_CMD_OK;
-			msgBuffer[2] 	=	8;
-			msgBuffer[3] 	=	'A';
-			msgBuffer[4] 	=	'V';
-			msgBuffer[5] 	=	'R';
-			msgBuffer[6] 	=	'I';
-			msgBuffer[7] 	=	'S';
-			msgBuffer[8] 	=	'P';
-			msgBuffer[9] 	=	'_';
-			msgBuffer[10]	=	'2';
+			msgLength = 11;
+			msgBuffer[1] = STATUS_CMD_OK;
+			msgBuffer[2] = 8;
+			msgBuffer[3] = 'A';
+			msgBuffer[4] = 'V';
+			msgBuffer[5] = 'R';
+			msgBuffer[6] = 'I';
+			msgBuffer[7] = 'S';
+			msgBuffer[8] = 'P';
+			msgBuffer[9] = '_';
+			msgBuffer[10] = '2';
 			break;
 		case CMD_GET_PARAMETER:
 			msgLength = 3;
