@@ -59,11 +59,12 @@ FORMAT = ihex
 
 
 # Target file name (without extension).
-TARGET = stk500boot
+TARGET = boot-micro
 
 
 # List C source files here. (C dependencies are automatically generated.)
-SRC = stk500boot.c
+SRC = boot-micro.c
+#SRC = empty.c
 
 
 # List Assembler source files here.
