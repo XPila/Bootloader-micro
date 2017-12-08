@@ -63,7 +63,7 @@ TARGET = boot-micro
 
 
 # List C source files here. (C dependencies are automatically generated.)
-SRC = boot-micro.c
+SRC = boot-micro.c stk500.c
 #SRC = empty.c
 
 
