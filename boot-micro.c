@@ -59,13 +59,6 @@
 typedef uint32_t address_t;
 
 
-void sendchar(char c)
-{
-	UDR0 = c;                         // prepare transmission
-	while (!(UCSR0A & (1 << TXC0)));  // wait until byte sent
-	UCSR0A |= (1 << TXC0);            // delete TXCflag
-}
-
 
 void _delay(void)
 {
@@ -94,6 +87,50 @@ uint8_t param(uint8_t param)
 	return 0;
 };
 
+//#pragma pack(push)
+//#pragma pack(1)
+/*typedef struct
+{
+	uint8_t start;
+	uint8_t seq_num;
+	uint16_t length;
+	uint8_t token;
+	uint8_t data[];
+} stk500_msg_t;*/
+//#pragma pack(pop)
+
+uint8_t stk500_checksum;
+uint8_t stk500_seq_num;
+uint16_t stk500_length;
+uint8_t stk500_buffer[285];
+
+void stk500_tx(uint8_t c)
+{
+	UDR0 = c;                         // prepare transmission
+	while (!(UCSR0A & (1 << TXC0)));  // wait until byte sent
+	UCSR0A |= (1 << TXC0);            // delete TXCflag
+	stk500_checksum ^= c;             // update checksum
+}
+
+
+/*int stk500_rxmsg()
+{
+}
+*/
+void stk500_txmsg(void)
+{
+	stk500_checksum = 0x00;
+	stk500_tx(MESSAGE_START);
+	stk500_tx(stk500_seq_num);
+	stk500_tx((stk500_length >> 8) & 0xff);
+	stk500_tx(stk500_length & 0xff);
+	stk500_tx(TOKEN);
+	uint8_t* p = stk500_buffer;
+	while (stk500_length--)
+		stk500_tx(*(p++));
+	stk500_tx(stk500_checksum);
+	stk500_seq_num++;
+}
 
 int main(void)
 {
@@ -101,10 +138,6 @@ int main(void)
 	address_t eraseAddress = 0;
 	uint8_t msgParseState;
 	uint16_t ii = 0;
-	uint8_t checksum = 0;
-	uint8_t seqNum = 0;
-	uint16_t msgLength = 0;
-	uint8_t msgBuffer[285];
 	register uint8_t c;
 	uint8_t *p;
 	uint8_t isLeave = 0;
@@ -128,9 +161,9 @@ int main(void)
 
 	asm("nop"); // wait until port has changed
 
-	timer = 18000; // 1s
-	while (!(UCSR0A & (1 << RXC0)) && (--timer)) _delay(); // wait for data
-	if (timer == 0) goto exit;
+//	timer = 18000; // 1s
+//	while (!(UCSR0A & (1 << RXC0)) && (--timer)) _delay(); // wait for data
+//	if (timer == 0) goto exit;
 
 	while (!isLeave)
 	{
@@ -142,26 +175,26 @@ int main(void)
 			while (!(UCSR0A & (1 << RXC0)) && (--timer)) _delay(); // wait for data
 			if (timer == 0) goto exit;
 			c = UDR0;
-			checksum ^= c;
+			stk500_checksum ^= c;
 			switch (msgParseState)
 			{
 			case ST_START:
 				if (c == MESSAGE_START)
 				{
 					msgParseState = ST_GET_SEQ_NUM;
-					checksum = MESSAGE_START;
+					stk500_checksum = MESSAGE_START;
 				}
 				break;
 			case ST_GET_SEQ_NUM:
-				seqNum = c;
+				stk500_seq_num = c;
 				msgParseState = ST_MSG_SIZE_1;
 				break;
 			case ST_MSG_SIZE_1:
-				msgLength = c << 8;
+				stk500_length = c << 8;
 				msgParseState = ST_MSG_SIZE_2;
 				break;
 			case ST_MSG_SIZE_2:
-				msgLength |= c;
+				stk500_length |= c;
 				msgParseState = ST_GET_TOKEN;
 				break;
 			case ST_GET_TOKEN:
@@ -171,12 +204,12 @@ int main(void)
 					msgParseState = ST_START;
 				break;
 			case ST_GET_DATA:
-				msgBuffer[ii++]	= c;
-				if (ii == msgLength)
+				stk500_buffer[ii++]	= c;
+				if (ii == stk500_length)
 					msgParseState = ST_GET_CHECK;
 				break;
 			case ST_GET_CHECK:
-				if (checksum == 0)
+				if (stk500_checksum == 0)
 					msgParseState = ST_PROCESS;
 				else
 					msgParseState = ST_START;
@@ -184,50 +217,50 @@ int main(void)
 			}
 		}
 
-		switch (msgBuffer[0])
+		switch (stk500_buffer[0])
 		{
 		case CMD_SIGN_ON:
-			msgLength = 11;
-			msgBuffer[1] = STATUS_CMD_OK;
-			msgBuffer[2] = 8;
-			msgBuffer[3] = 'A';
-			msgBuffer[4] = 'V';
-			msgBuffer[5] = 'R';
-			msgBuffer[6] = 'I';
-			msgBuffer[7] = 'S';
-			msgBuffer[8] = 'P';
-			msgBuffer[9] = '_';
-			msgBuffer[10] = '2';
+			stk500_length = 11;
+			stk500_buffer[1] = STATUS_CMD_OK;
+			stk500_buffer[2] = 8;
+			stk500_buffer[3] = 'A';
+			stk500_buffer[4] = 'V';
+			stk500_buffer[5] = 'R';
+			stk500_buffer[6] = 'I';
+			stk500_buffer[7] = 'S';
+			stk500_buffer[8] = 'P';
+			stk500_buffer[9] = '_';
+			stk500_buffer[10] = '2';
 			break;
 		case CMD_GET_PARAMETER:
-			msgLength = 3;
-			msgBuffer[2] = param(msgBuffer[1]);
-			msgBuffer[1] = STATUS_CMD_OK;
+			stk500_length = 3;
+			stk500_buffer[2] = param(stk500_buffer[1]);
+			stk500_buffer[1] = STATUS_CMD_OK;
 			break;
 		case CMD_LEAVE_PROGMODE_ISP:
 			isLeave	=	1;
 			//*	fall thru
 		case CMD_SET_PARAMETER:
 		case CMD_ENTER_PROGMODE_ISP:
-			msgLength		=	2;
-			msgBuffer[1]	=	STATUS_CMD_OK;
+			stk500_length		=	2;
+			stk500_buffer[1]	=	STATUS_CMD_OK;
 			break;
 		case CMD_READ_SIGNATURE_ISP:
-			msgLength =	4;
-			msgBuffer[1] = STATUS_CMD_OK;
-			msgBuffer[2] = pgm_read_byte_far(signature + msgBuffer[4]); //msgBuffer[4] is signatureIndex
-			msgBuffer[3] = STATUS_CMD_OK;
+			stk500_length =	4;
+			stk500_buffer[1] = STATUS_CMD_OK;
+			stk500_buffer[2] = pgm_read_byte_far(signature + stk500_buffer[4]); //stk500_buffer[4] is signatureIndex
+			stk500_buffer[3] = STATUS_CMD_OK;
 			break;
 		case CMD_LOAD_ADDRESS:
-			address	=	( ((address_t)(msgBuffer[1])<<24)|((address_t)(msgBuffer[2])<<16)|((address_t)(msgBuffer[3])<<8)|(msgBuffer[4]) )<<1;
-			///address	=	( ((msgBuffer[3])<<8)|(msgBuffer[4]) )<<1;		//convert word to byte address
-			msgLength		=	2;
-			msgBuffer[1]	=	STATUS_CMD_OK;
+			address	=	( ((address_t)(stk500_buffer[1])<<24)|((address_t)(stk500_buffer[2])<<16)|((address_t)(stk500_buffer[3])<<8)|(stk500_buffer[4]) )<<1;
+			///address	=	( ((stk500_buffer[3])<<8)|(stk500_buffer[4]) )<<1;		//convert word to byte address
+			stk500_length		=	2;
+			stk500_buffer[1]	=	STATUS_CMD_OK;
 			break;
 		case CMD_PROGRAM_FLASH_ISP:
 			{
-				uint16_t size = ((msgBuffer[1])<<8) | msgBuffer[2];
-				uint8_t *p = msgBuffer+10;
+				uint16_t size = ((stk500_buffer[1])<<8) | stk500_buffer[2];
+				uint8_t *p = stk500_buffer+10;
 				uint16_t data;
 				uint8_t highByte, lowByte;
 				address_t tempaddress = address;
@@ -256,44 +289,16 @@ int main(void)
 					boot_spm_busy_wait();
 					boot_rww_enable();				// Re-enable the RWW section
 				}
-				msgLength		=	2;
-				msgBuffer[1]	=	STATUS_CMD_OK;
+				stk500_length		=	2;
+				stk500_buffer[1]	=	STATUS_CMD_OK;
 			}
 			break;
 		default:
-			msgLength		=	2;
-			msgBuffer[1]	=	STATUS_CMD_FAILED;
+			stk500_length		=	2;
+			stk500_buffer[1]	=	STATUS_CMD_FAILED;
 			break;
 		}
-
-		/*
-		 * Now send answer message back
-		 */
-		sendchar(MESSAGE_START);
-		checksum	=	MESSAGE_START^0;
-
-		sendchar(seqNum);
-		checksum	^=	seqNum;
-
-		c			=	((msgLength>>8)&0xFF);
-		sendchar(c);
-		checksum	^=	c;
-
-		c			=	msgLength&0x00FF;
-		sendchar(c);
-		checksum ^= c;
-		sendchar(TOKEN);
-		checksum ^= TOKEN;
-		p	=	msgBuffer;
-		while ( msgLength )
-		{
-			c	=	*p++;
-			sendchar(c);
-			checksum ^=c;
-			msgLength--;
-		}
-		sendchar(checksum);
-		seqNum++;
+		stk500_txmsg();
 	}
 
 exit:
